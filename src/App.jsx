@@ -303,7 +303,79 @@ const B24UCalculator = () => {
   };
   
   const exportToPDF = async () => {
-    window.print();
+    // Dynamic import of html2pdf
+    const html2pdf = (await import('html2pdf.js')).default;
+    
+    // Get the results container
+    const element = resultsRef.current;
+    if (!element) {
+      alert('Ошибка: не удалось найти контент для экспорта');
+      return;
+    }
+    
+    // Clone the element to modify for PDF
+    const clonedElement = element.cloneNode(true);
+    
+    // Remove no-print elements from clone
+    const noPrintElements = clonedElement.querySelectorAll('.no-print');
+    noPrintElements.forEach(el => el.remove());
+    
+    // PDF options
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `b24u-calculator-${new Date().toISOString().split('T')[0]}.pdf`,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#0f172a'
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait'
+      },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+    
+    try {
+      // Show loading indicator
+      const originalButton = document.activeElement;
+      if (originalButton) {
+        originalButton.textContent = '⏳ Генерация PDF...';
+        originalButton.disabled = true;
+      }
+      
+      // Generate PDF
+      await html2pdf().set(opt).from(clonedElement).save();
+      
+      // Restore button
+      if (originalButton) {
+        originalButton.textContent = '📄 PDF';
+        originalButton.disabled = false;
+      }
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Ошибка при создании PDF. Попробуйте ещё раз.');
+    }
+  };
+  
+  const downloadPDF = async () => {
+    // Alternative: Direct PDF download using browser's print-to-PDF
+    // This opens the print dialog with PDF as default
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(document.documentElement.outerHTML);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+    } else {
+      // Fallback to regular print
+      window.print();
+    }
   };
   
   const exportToGoogleSheets = () => {
@@ -484,6 +556,19 @@ const B24UCalculator = () => {
           
           @media print {
             .no-print { display: none !important; }
+            body { background: white !important; }
+            .bg-slate-900 { background: white !important; color: black !important; }
+            .bg-slate-800 { background: #f8f9fa !important; }
+            .text-white { color: black !important; }
+            .text-slate-400, .text-slate-500, .text-slate-600 { color: #666 !important; }
+            .border-slate-700 { border-color: #ddd !important; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            .metric-card { break-inside: avoid; }
+            
+            @page {
+              margin: 1.5cm;
+            }
           }
         `}</style>
         
