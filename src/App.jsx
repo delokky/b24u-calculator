@@ -106,6 +106,12 @@ const B24UCalculator = () => {
     }
   };
   
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && canProceed()) {
+      handleNext();
+    }
+  };
+  
   const handleBack = () => {
     if (step > 0) {
       setStep(step - 1);
@@ -369,6 +375,7 @@ const B24UCalculator = () => {
                     type="number"
                     value={customGrowth}
                     onChange={(e) => setCustomGrowth(e.target.value)}
+                    onKeyPress={handleKeyPress}
                     placeholder="Процент роста"
                     className="w-full px-4 py-3 bg-slate-800 border-2 border-cyan-400 rounded-lg text-white placeholder-slate-500 focus:outline-none mono text-lg"
                     autoFocus
@@ -380,6 +387,7 @@ const B24UCalculator = () => {
                 type="number"
                 value={getCurrentValue()}
                 onChange={(e) => updateCurrentValue(e.target.value)}
+                onKeyPress={handleKeyPress}
                 placeholder={currentQ.placeholder}
                 className="w-full px-4 py-4 bg-slate-800 border-2 border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 transition-colors mono text-2xl text-center"
                 autoFocus
