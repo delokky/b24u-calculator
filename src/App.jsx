@@ -302,165 +302,234 @@ const B24UCalculator = () => {
     return new Intl.NumberFormat('ru-RU').format(value);
   };
   
-  const exportToPDF = async () => {
-    // Dynamic import of html2pdf
-    const html2pdf = (await import('html2pdf.js')).default;
+  // PREMIUM PDF EXPORT FUNCTION - Replace exportToPDF in App.jsx with this
+
+const exportToPDF = async () => {
+  const html2pdf = (await import('html2pdf.js')).default;
+  
+  // Calculate all insights
+  const totalNew = metricsData.reduce((s, r) => s + r.newClients, 0);
+  const totalChurn = metricsData.reduce((s, r) => s + r.churnedClients, 0);
+  const breakEven = metricsData.find(d => d.cumulativeProfit >= 0)?.monthNum || null;
+  const to500K = metricsData.find(d => d.partnerRevenue >= 500000)?.monthNum || null;
+  const to1M = metricsData.find(d => d.partnerRevenue >= 1000000)?.monthNum || null;
+  const bestMonth = metricsData.reduce((max, r) => r.profit > max.profit ? r : max);
+  const avgGrowth = ((metricsData[11].activeClients - metricsData[0].activeClients) / metricsData[0].activeClients * 100 / 11).toFixed(1);
+  
+  // Scenarios
+  const optimistic = calculateMetrics(parseInt(avgPrice) * 1.1, parseFloat(churnRate) * 0.8, Math.round(parseInt(firstMonthClients) * 0.3));
+  const pessimistic = calculateMetrics(parseInt(avgPrice) * 0.9, parseFloat(churnRate) * 1.2, Math.round(parseInt(firstMonthClients) * -0.2));
+  const lowerChurn = calculateMetrics(parseInt(avgPrice), Math.max(0, parseFloat(churnRate) - 5), 0);
+  const churnImpact = lowerChurn[11].cumulativeRevenue - metricsData[11].cumulativeRevenue;
+  
+  const pdf = document.createElement('div');
+  pdf.style.cssText = 'background: white; padding: 25px; font-family: Georgia, serif; color: #1e293b;';
+  
+  pdf.innerHTML = `
+    <style>
+      .mono { font-family: "Courier New", monospace; }
+      h1, h2, h3 { font-family: -apple-system, sans-serif; }
+    </style>
     
-    // Create a clean version for PDF
-    const pdfContainer = document.createElement('div');
-    pdfContainer.style.cssText = 'background: white; padding: 40px; font-family: Arial, sans-serif; color: black;';
+    <div style="border-bottom: 3px solid #22d3ee; padding-bottom: 10px; margin-bottom: 15px;">
+      <h1 style="margin: 0; font-size: 20px;">B24U Калькулятор Бизнеса Дистрибьютора</h1>
+      <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+        <span style="font-size: 10px; color: #64748b;">Финансовый прогноз на 12 месяцев</span>
+        <span style="font-size: 10px; color: #64748b;">${new Date().toLocaleDateString('ru-RU')} • Страница 1/2</span>
+      </div>
+    </div>
     
-    // Add header
-    pdfContainer.innerHTML = `
-      <div style="margin-bottom: 20px; border-bottom: 3px solid #22d3ee; padding-bottom: 15px;">
-        <h1 style="margin: 0; font-size: 24px; color: #1e293b;">B24U Калькулятор Бизнеса Дистрибьютора</h1>
-        <p style="margin: 5px 0 0 0; color: #64748b; font-size: 12px;">Прогноз на 12 месяцев • ${new Date().toLocaleDateString('ru-RU')}</p>
+    <div style="background: linear-gradient(to right, #eff6ff, #dbeafe); padding: 10px; border-radius: 5px; border: 2px solid #3b82f6; margin-bottom: 12px;">
+      <h3 style="margin: 0 0 8px 0; font-size: 11px; color: #1e40af;">📋 ИСХОДНЫЕ ПАРАМЕТРЫ</h3>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; font-size: 9px;">
+        ${['Цена', 'Клиенты', 'Рост', 'Churn', 'CAC', 'Opex'].map((label, i) => {
+          const values = [
+            formatMoney(parseInt(avgPrice)),
+            firstMonthClients + ' шт',
+            growthType === 'stable' ? 'Стабильный' : growthType === 'moderate' ? '+10%' : growthType === 'aggressive' ? '+20%' : growthType === 'very-aggressive' ? '+30%' : `+${customGrowth}%`,
+            churnRate + '%',
+            formatMoney(parseInt(cacValue)),
+            formatMoney(parseInt(opex) || 0)
+          ];
+          return `<div style="background: white; padding: 5px; border-radius: 3px;"><div style="color: #64748b; font-size: 8px;">${label}</div><div style="font-weight: bold; margin-top: 2px;">${values[i]}</div></div>`;
+        }).join('')}
       </div>
-      
-      <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border: 2px solid #22d3ee; margin-bottom: 20px;">
-        <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #1e293b; font-weight: bold;">📋 ИСХОДНЫЕ ПАРАМЕТРЫ</h3>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 11px;">
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">Цена продажи:</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${formatMoney(parseInt(avgPrice))}</strong>
-          </div>
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">Клиентов (старт):</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${firstMonthClients} шт</strong>
-          </div>
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">Стратегия роста:</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${
-              growthType === 'stable' ? 'Стабильный' :
-              growthType === 'moderate' ? '+10%/мес' :
-              growthType === 'aggressive' ? '+20%/мес' :
-              growthType === 'very-aggressive' ? '+30%/мес' :
-              `+${customGrowth}%/мес`
-            }</strong>
-          </div>
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">Churn Rate:</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${churnRate}%</strong>
-          </div>
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">CAC:</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${formatMoney(parseInt(cacValue))}</strong>
-          </div>
-          <div style="background: white; padding: 8px; border-radius: 4px;">
-            <span style="color: #64748b;">Opex (мес):</span><br>
-            <strong style="font-size: 13px; color: #1e293b;">${formatMoney(parseInt(opex) || 0)}</strong>
-          </div>
+    </div>
+    
+    <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 10px; margin-bottom: 12px; border-radius: 3px;">
+      <h3 style="margin: 0 0 6px 0; font-size: 10px; color: #166534;">💡 КЛЮЧЕВЫЕ ВЫВОДЫ</h3>
+      <div style="font-size: 8.5px; line-height: 1.5; color: #166534;">
+        • Безубыточность: ${breakEven ? `месяц ${breakEven}` : '>12 мес'} ${breakEven && breakEven <= 6 ? '(быстро ✓)' : ''}<br>
+        • До 500K: ${to500K ? `месяц ${to500K}` : '>12 мес'} • До 1M: ${to1M ? `месяц ${to1M}` : '>12 мес'}<br>
+        • Лучший месяц: ${bestMonth.monthName} (${formatMoney(bestMonth.profit)})<br>
+        • Средний рост: +${avgGrowth}%/мес • Прирост: ${totalNew - totalChurn} клиентов/год
+      </div>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+      <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 8px; border-radius: 3px;">
+        <h3 style="margin: 0 0 5px 0; font-size: 9px; color: #991b1b;">⚠️ ЗОНЫ ВНИМАНИЯ</h3>
+        <div style="font-size: 8px; line-height: 1.4; color: #991b1b;">
+          ${metricsData[11].ltvCacRatio < 3 ? `• LTV/CAC ${metricsData[11].ltvCacRatio.toFixed(1)}x (норма >3x)<br>` : ''}
+          ${parseFloat(churnRate) > 10 ? `• Churn ${churnRate}% высокий<br>` : ''}
+          ${breakEven && breakEven > 6 ? `• Долгая окупаемость (${breakEven} мес)<br>` : ''}
+          ${metricsData[11].ltvCacRatio >= 3 && parseFloat(churnRate) <= 10 && (!breakEven || breakEven <= 6) ? '✓ Рисков не выявлено' : ''}
         </div>
       </div>
-      
-      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; border-left: 3px solid #22d3ee;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">MRR (месяц 12)</div>
-          <div style="font-size: 16px; font-weight: bold; color: #1e293b;">${formatMoney(metricsData[11].mrr)}</div>
-          <div style="font-size: 9px; color: #22d3ee; margin-top: 3px;">${metricsData[11].activeClients} клиентов</div>
-        </div>
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; border-left: 3px solid #22d3ee;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">ВАШ ДОХОД</div>
-          <div style="font-size: 16px; font-weight: bold; color: #22d3ee;">${formatMoney(metricsData[11].partnerRevenue)}</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">50% от MRR</div>
-        </div>
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; border-left: 3px solid #a855f7;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">ДО 500K</div>
-          <div style="font-size: 16px; font-weight: bold; color: #a855f7;">${monthTo500K ? `М${monthTo500K}` : '>12'}</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">${monthTo500K ? 'Достижимо' : 'Долго'}</div>
-        </div>
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; border-left: 3px solid ${metricsData[11].cumulativeProfit >= 0 ? '#22c55e' : '#ef4444'};">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">ПРИБЫЛЬ ГОД</div>
-          <div style="font-size: 16px; font-weight: bold; color: ${metricsData[11].cumulativeProfit >= 0 ? '#22c55e' : '#ef4444'};">${formatMoney(metricsData[11].cumulativeProfit)}</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">За 12 месяцев</div>
+      <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 8px; border-radius: 3px;">
+        <h3 style="margin: 0 0 5px 0; font-size: 9px; color: #1e40af;">✅ СИЛЬНЫЕ СТОРОНЫ</h3>
+        <div style="font-size: 8px; line-height: 1.4; color: #1e40af;">
+          ${metricsData[11].ltvCacRatio >= 3 ? `• Отличная экономика (${metricsData[11].ltvCacRatio.toFixed(1)}x)<br>` : ''}
+          ${breakEven && breakEven <= 6 ? `• Быстрая прибыль (${breakEven} мес)<br>` : ''}
+          ${parseFloat(churnRate) <= 8 ? `• Низкий churn (${churnRate}%)<br>` : ''}
+          ${parseFloat(avgGrowth) >= 15 ? `• Высокий рост (+${avgGrowth}%/мес)<br>` : ''}
         </div>
       </div>
-      
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 11px;">
-        <thead>
-          <tr style="background: #1e293b; color: white;">
-            <th style="padding: 10px; text-align: left; border: 1px solid #cbd5e1;">Месяц</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">Новые</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">Отток</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">База</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">MRR</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">Доход</th>
-            <th style="padding: 10px; text-align: right; border: 1px solid #cbd5e1;">Прибыль</th>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px;">
+      ${[
+        { label: 'MRR М12', value: formatMoney(metricsData[11].mrr), sub: `${metricsData[11].activeClients} кл`, color: '#22d3ee' },
+        { label: 'ВАШ ДОХОД', value: formatMoney(metricsData[11].partnerRevenue), sub: '50% от MRR', color: '#3b82f6' },
+        { label: 'ДО 500K', value: to500K ? `М${to500K}` : '>12', sub: to500K ? 'Достижимо' : 'Долго', color: '#a855f7' },
+        { label: 'ПРИБЫЛЬ ГОД', value: formatMoney(metricsData[11].cumulativeProfit), sub: '12 месяцев', color: metricsData[11].cumulativeProfit >= 0 ? '#22c55e' : '#ef4444' }
+      ].map(m => `
+        <div style="background: #f8fafc; padding: 8px; border-radius: 4px; border-left: 3px solid ${m.color};">
+          <div style="font-size: 8px; color: #64748b; margin-bottom: 2px;">${m.label}</div>
+          <div style="font-size: 12px; font-weight: bold; color: ${m.color};" class="mono">${m.value}</div>
+          <div style="font-size: 7px; color: #64748b; margin-top: 2px;">${m.sub}</div>
+        </div>
+      `).join('')}
+    </div>
+    
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 8px;">
+      <thead><tr style="background: #1e293b; color: white;">
+        ${['Месяц', 'Новые', 'Отток', 'База', 'MRR', 'Доход', 'Прибыль', ''].map(h => 
+          `<th style="padding: 4px 3px; border: 1px solid #cbd5e1; text-align: ${h === 'Месяц' ? 'left' : h === '' ? 'center' : 'right'};">${h}</th>`
+        ).join('')}
+      </tr></thead>
+      <tbody>
+        ${metricsData.map((r, i) => `
+          <tr style="background: ${i % 2 ? 'white' : '#f8fafc'}; ${r.profit >= 0 ? 'background: #f0fdf4;' : ''}">
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; font-weight: 600;">${r.monthName}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right; color: #22c55e;">+${r.newClients}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right; color: #ef4444;">-${r.churnedClients}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600;">${r.activeClients}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right;" class="mono">${formatMoney(r.mrr)}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600;" class="mono">${formatMoney(r.partnerRevenue)}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: ${r.profit >= 0 ? '#22c55e' : '#ef4444'};" class="mono">${formatMoney(r.profit)}</td>
+            <td style="padding: 4px 3px; border: 1px solid #e2e8f0; text-align: center;">${r.profit >= 0 ? '✓' : '○'}</td>
           </tr>
-        </thead>
-        <tbody>
-          ${metricsData.map((row, idx) => `
-            <tr style="background: ${idx % 2 === 0 ? '#f8fafc' : 'white'};">
-              <td style="padding: 8px; border: 1px solid #e2e8f0; font-weight: 600;">${row.monthName}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; color: #22c55e;">${row.newClients}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; color: #ef4444;">${row.churnedClients}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600;">${row.activeClients}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right;">${formatMoney(row.mrr)}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: #22d3ee;">${formatMoney(row.partnerRevenue)}</td>
-              <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: ${row.profit >= 0 ? '#22c55e' : '#ef4444'};">${formatMoney(row.profit)}</td>
-            </tr>
-          `).join('')}
-          <tr style="background: #1e293b; color: white; font-weight: bold;">
-            <td style="padding: 10px; border: 1px solid #cbd5e1;">ИТОГО</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${metricsData.reduce((s, r) => s + r.newClients, 0)}</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${metricsData.reduce((s, r) => s + r.churnedClients, 0)}</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${metricsData[11].activeClients}</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${formatMoney(metricsData[11].mrr)}</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${formatMoney(metricsData[11].cumulativeRevenue)}</td>
-            <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: right;">${formatMoney(metricsData[11].cumulativeProfit)}</td>
+        `).join('')}
+        <tr style="background: #1e293b; color: white; font-weight: bold;">
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1;">ИТОГО</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;">${totalNew}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;">${totalChurn}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;">${metricsData[11].activeClients}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;" class="mono">${formatMoney(metricsData[11].mrr)}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;" class="mono">${formatMoney(metricsData[11].cumulativeRevenue)}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1; text-align: right;" class="mono">${formatMoney(metricsData[11].cumulativeProfit)}</td>
+          <td style="padding: 5px 3px; border: 1px solid #cbd5e1;"></td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <div style="page-break-after: always;"></div>
+    
+    <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between;">
+        <h2 style="margin: 0; font-size: 14px;">Дополнительная аналитика</h2>
+        <span style="font-size: 9px; color: #64748b;">Страница 2/2</span>
+      </div>
+    </div>
+    
+    <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 10px; margin-bottom: 12px; border-radius: 3px;">
+      <h3 style="margin: 0 0 6px 0; font-size: 10px; color: #92400e;">💰 ФОРМИРОВАНИЕ ПРИБЫЛИ (М12)</h3>
+      <div style="font-size: 8px; font-family: monospace; line-height: 1.6; color: #92400e;">
+        Доход (50% MRR):    ${formatMoney(metricsData[11].partnerRevenue).padStart(13)}<br>
+        - CAC:              ${formatMoney(-metricsData[11].acquisitionCost).padStart(13)}<br>
+        - Opex:             ${formatMoney(-metricsData[11].monthlyOpex).padStart(13)}<br>
+        ${'─'.repeat(35)}<br>
+        <strong>Прибыль:            ${formatMoney(metricsData[11].profit).padStart(13)}</strong>
+      </div>
+    </div>
+    
+    <div style="background: #fef3c7; border: 2px solid #f59e0b; padding: 10px; margin-bottom: 12px; border-radius: 4px;">
+      <h3 style="margin: 0 0 6px 0; font-size: 10px; color: #92400e;">🔮 ЧТО ЕСЛИ...?</h3>
+      <div style="font-size: 8px; line-height: 1.5; color: #92400e;">
+        <strong>Снизить Churn на 5%:</strong> доход +${formatMoney(churnImpact)} (+${((churnImpact / metricsData[11].cumulativeRevenue) * 100).toFixed(1)}%)<br>
+        <strong>Увеличить цену на 10%:</strong> MRR ${formatMoney(metricsData[11].mrr * 1.1)}, доход ${formatMoney(metricsData[11].cumulativeRevenue * 1.1)}
+      </div>
+    </div>
+    
+    <div style="background: #f3f4f6; padding: 10px; border-radius: 4px; margin-bottom: 12px;">
+      <h3 style="margin: 0 0 6px 0; font-size: 10px; color: #1f2937;">🎯 СЦЕНАРНОЕ ПЛАНИРОВАНИЕ</h3>
+      <table style="width: 100%; font-size: 8px; border-collapse: collapse;">
+        <tr style="background: #e5e7eb;"><th style="padding: 4px; text-align: left; border: 1px solid #d1d5db;">Сценарий</th><th style="padding: 4px; text-align: right; border: 1px solid #d1d5db;">MRR М12</th><th style="padding: 4px; text-align: right; border: 1px solid #d1d5db;">Доход год</th><th style="padding: 4px; text-align: right; border: 1px solid #d1d5db;">Прибыль</th><th style="padding: 4px; text-align: center; border: 1px solid #d1d5db;">vs База</th></tr>
+        ${[
+          { name: 'Пессимистичный', data: pessimistic, bg: '#fef2f2', color: '#ef4444' },
+          { name: 'Базовый', data: metricsData, bg: 'white', color: metricsData[11].cumulativeProfit >= 0 ? '#22c55e' : '#ef4444', bold: true },
+          { name: 'Оптимистичный', data: optimistic, bg: '#f0fdf4', color: '#22c55e' }
+        ].map(s => `
+          <tr style="background: ${s.bg}; ${s.bold ? 'font-weight: bold;' : ''}">
+            <td style="padding: 4px; border: 1px solid #d1d5db;">${s.name}</td>
+            <td style="padding: 4px; text-align: right; border: 1px solid #d1d5db;" class="mono">${formatMoney(s.data[11].mrr)}</td>
+            <td style="padding: 4px; text-align: right; border: 1px solid #d1d5db;" class="mono">${formatMoney(s.data[11].cumulativeRevenue)}</td>
+            <td style="padding: 4px; text-align: right; border: 1px solid #d1d5db; color: ${s.color};" class="mono">${formatMoney(s.data[11].cumulativeProfit)}</td>
+            <td style="padding: 4px; text-align: center; border: 1px solid #d1d5db; color: ${s.color};">${s.bold ? '—' : (s.data[11].cumulativeRevenue > metricsData[11].cumulativeRevenue ? '+' : '') + ((s.data[11].cumulativeRevenue / metricsData[11].cumulativeRevenue - 1) * 100).toFixed(0) + '%'}</td>
           </tr>
-        </tbody>
+        `).join('')}
       </table>
-      
-      <div style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #e2e8f0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">LTV КЛИЕНТА</div>
-          <div style="font-size: 16px; font-weight: bold;">${formatMoney(metricsData[11].ltv)}</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">${Math.round(100/parseFloat(churnRate))} мес жизни</div>
-        </div>
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">LTV/CAC RATIO</div>
-          <div style="font-size: 16px; font-weight: bold; color: ${metricsData[11].ltvCacRatio >= 3 ? '#22c55e' : '#f59e0b'};">${metricsData[11].ltvCacRatio.toFixed(1)}x</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">${metricsData[11].ltvCacRatio >= 3 ? '✓ Отлично' : '⚠ Улучшить'}</div>
-        </div>
-        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px;">
-          <div style="font-size: 10px; color: #64748b; margin-bottom: 3px;">RETENTION</div>
-          <div style="font-size: 16px; font-weight: bold;">${100 - parseFloat(churnRate)}%</div>
-          <div style="font-size: 9px; color: #64748b; margin-top: 3px;">Удержание</div>
-        </div>
-      </div>
-      
-      <div style="margin-top: 15px; text-align: center; color: #94a3b8; font-size: 9px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
-        B24U Калькулятор Бизнеса Дистрибьютора | Сгенерировано ${new Date().toLocaleDateString('ru-RU')}
-      </div>
-    `;
+      <div style="font-size: 7px; color: #6b7280; margin-top: 4px; font-style: italic;">* Пессимистичный: -10% цена, +20% churn • Оптимистичный: +10% цена, -20% churn</div>
+    </div>
     
-    // PDF options
-    const opt = {
-      margin: 15,
-      filename: `b24u-calculator-${new Date().toISOString().split('T')[0]}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { 
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      },
-      jsPDF: { 
-        unit: 'mm', 
-        format: 'a4', 
-        orientation: 'portrait'
-      }
-    };
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px;">
+      ${[
+        { label: 'LTV КЛИЕНТА', value: formatMoney(metricsData[11].ltv), sub: `${Math.round(100/parseFloat(churnRate))} мес × ${formatMoney(parseInt(avgPrice) * 0.5)}` },
+        { label: 'LTV/CAC RATIO', value: metricsData[11].ltvCacRatio.toFixed(1) + 'x', sub: metricsData[11].ltvCacRatio >= 3 ? '✓ Отлично' : '⚠ Улучшить', color: metricsData[11].ltvCacRatio >= 3 ? '#22c55e' : '#f59e0b' },
+        { label: 'RETENTION', value: (100 - parseFloat(churnRate)) + '%', sub: `Churn ${churnRate}%/мес` }
+      ].map(m => `
+        <div style="background: #f8fafc; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
+          <div style="font-size: 8px; color: #64748b; margin-bottom: 2px;">${m.label}</div>
+          <div style="font-size: 13px; font-weight: bold; ${m.color ? `color: ${m.color};` : ''}" class="mono">${m.value}</div>
+          <div style="font-size: 7px; color: #64748b; margin-top: 2px;">${m.sub}</div>
+        </div>
+      `).join('')}
+    </div>
     
-    try {
-      // Generate PDF
-      await html2pdf().set(opt).from(pdfContainer).save();
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Ошибка при создании PDF. Попробуйте ещё раз.');
-    }
+    <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 10px; margin-bottom: 12px; border-radius: 3px;">
+      <h3 style="margin: 0 0 5px 0; font-size: 10px; color: #1e40af;">📈 ПРОГНОЗ НА 24 МЕСЯЦА</h3>
+      <div style="font-size: 8px; line-height: 1.5; color: #1e40af;">
+        При текущих темпах:<br>
+        • <strong>М18:</strong> MRR ≈${formatMoney(metricsData[11].mrr * 1.5)}, доход ≈${formatMoney(metricsData[11].partnerRevenue * 1.5)}<br>
+        • <strong>М24:</strong> MRR ≈${formatMoney(metricsData[11].mrr * 2)}, доход ≈${formatMoney(metricsData[11].partnerRevenue * 2)}<br>
+        • <strong>За 2 года:</strong> прибыль ≈${formatMoney(metricsData[11].cumulativeProfit * 3)}
+      </div>
+    </div>
+    
+    <div style="margin-top: 12px; padding-top: 8px; border-top: 2px solid #e2e8f0; text-align: center; font-size: 7px; color: #94a3b8;">
+      <div>B24U Калькулятор Бизнеса Дистрибьютора</div>
+      <div style="margin-top: 2px;">Сгенерировано: ${new Date().toLocaleDateString('ru-RU')} ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>
+      <div style="margin-top: 2px; font-size: 6px;">Документ содержит прогнозную информацию. Фактические результаты могут отличаться.</div>
+    </div>
+  `;
+  
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: `b24u-business-plan-${new Date().toISOString().split('T')[0]}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', letterRendering: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+    pagebreak: { mode: ['css', 'legacy'] }
   };
+  
+  try {
+    await html2pdf().set(opt).from(pdf).save();
+  } catch (error) {
+    console.error('PDF error:', error);
+    alert('Ошибка при создании PDF');
+  }
+};
   
   const downloadPDF = async () => {
     // Alternative: Direct PDF download using browser's print-to-PDF
