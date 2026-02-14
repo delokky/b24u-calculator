@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 const B24UCalculator = () => {
@@ -111,6 +111,25 @@ const B24UCalculator = () => {
       handleNext();
     }
   };
+  
+  // Handle keyboard navigation for growth step
+  const handleGrowthKeyPress = (e) => {
+    if (e.key === 'Enter' && step === 2 && canProceed()) {
+      handleNext();
+    }
+  };
+  
+  // Add keyboard listener for Enter on all steps
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter' && !showResults && canProceed()) {
+        handleNext();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [step, showResults, avgPrice, firstMonthClients, growthType, customGrowth, churnRate, cacValue, opex]);
   
   const handleBack = () => {
     if (step > 0) {
