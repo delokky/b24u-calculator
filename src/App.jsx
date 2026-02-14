@@ -5,6 +5,7 @@ const B24UCalculator = () => {
   const [step, setStep] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const [activeTab, setActiveTab] = useState('results'); // 'results', 'whatif', 'goal'
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const resultsRef = useRef(null);
   
   // Input parameters
@@ -132,6 +133,18 @@ const B24UCalculator = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [step, showResults, avgPrice, firstMonthClients, growthType, customGrowth, churnRate, cacValue, opex]);
+  
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (showExportMenu && !e.target.closest('.export-menu')) {
+        setShowExportMenu(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
   
   const handleBack = () => {
     if (step > 0) {
@@ -290,16 +303,151 @@ const B24UCalculator = () => {
   };
   
   const exportToPDF = async () => {
-    const element = resultsRef.current;
-    if (!element) return;
+    window.print();
+  };
+  
+  const exportToGoogleSheets = () => {
+    // Create CSV data
+    const headers = ['Месяц', 'Новые клиенты', 'Отток', 'Активная база', 'MRR', 'Ваш доход', 'Расходы', 'Прибыль'];
+    const rows = metricsData.map(row => [
+      row.monthName,
+      row.newClients,
+      row.churnedClients,
+      row.activeClients,
+      row.mrr,
+      row.partnerRevenue,
+      row.totalCosts,
+      row.profit
+    ]);
     
-    try {
-      // Simple approach: open print dialog which can save as PDF
-      window.print();
-    } catch (error) {
-      console.error('Export error:', error);
-      alert('Используйте Ctrl+P или Cmd+P для сохранения в PDF');
-    }
+    // Add summary row
+    const lastMonth = metricsData[metricsData.length - 1];
+    rows.push([
+      'ИТОГО',
+      metricsData.reduce((s, r) => s + r.newClients, 0),
+      metricsData.reduce((s, r) => s + r.churnedClients, 0),
+      lastMonth.activeClients,
+      lastMonth.mrr,
+      lastMonth.cumulativeRevenue,
+      lastMonth.totalInvestment,
+      lastMonth.cumulativeProfit
+    ]);
+    
+    // Add parameters section
+    rows.push([]);
+    rows.push(['ПАРАМЕТРЫ']);
+    rows.push(['Цена продажи', parseInt(avgPrice) + ' ₽']);
+    rows.push(['Клиентов в 1 месяц', firstMonthClients]);
+    rows.push(['Стратегия роста', 
+      growthType === 'stable' ? 'Стабильный' :
+      growthType === 'moderate' ? 'Умеренный +10%' :
+      growthType === 'aggressive' ? 'Агрессивный +20%' :
+      growthType === 'very-aggressive' ? 'Очень агрессивный +30%' :
+      `Свой +${customGrowth}%`
+    ]);
+    rows.push(['Churn Rate', churnRate + '%']);
+    rows.push(['CAC', parseInt(cacValue) + ' ₽']);
+    rows.push(['Операционные расходы', (parseInt(opex) || 0) + ' ₽']);
+    
+    // Convert to CSV
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+    
+    // Create blob and download
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `b24u-calculator-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+  const exportToExcel = () => {
+    // Create HTML table
+    let html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+      <head>
+        <meta charset="utf-8">
+        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+        <x:Name>B24U Калькулятор</x:Name>
+        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
+        </x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+      </head>
+      <body>
+        <table border="1">
+          <tr><th colspan="8" style="font-size: 16px; font-weight: bold;">B24U Калькулятор Бизнеса Дистрибьютора</th></tr>
+          <tr><th colspan="8"></th></tr>
+          <tr>
+            <th>Месяц</th>
+            <th>Новые клиенты</th>
+            <th>Отток</th>
+            <th>Активная база</th>
+            <th>MRR</th>
+            <th>Ваш доход</th>
+            <th>Расходы</th>
+            <th>Прибыль</th>
+          </tr>
+    `;
+    
+    metricsData.forEach(row => {
+      html += `
+        <tr>
+          <td>${row.monthName}</td>
+          <td>${row.newClients}</td>
+          <td>${row.churnedClients}</td>
+          <td>${row.activeClients}</td>
+          <td>${row.mrr}</td>
+          <td>${row.partnerRevenue}</td>
+          <td>${row.totalCosts}</td>
+          <td>${row.profit}</td>
+        </tr>
+      `;
+    });
+    
+    const lastMonth = metricsData[metricsData.length - 1];
+    html += `
+      <tr style="font-weight: bold; background-color: #f0f0f0;">
+        <td>ИТОГО</td>
+        <td>${metricsData.reduce((s, r) => s + r.newClients, 0)}</td>
+        <td>${metricsData.reduce((s, r) => s + r.churnedClients, 0)}</td>
+        <td>${lastMonth.activeClients}</td>
+        <td>${lastMonth.mrr}</td>
+        <td>${lastMonth.cumulativeRevenue}</td>
+        <td>${lastMonth.totalInvestment}</td>
+        <td>${lastMonth.cumulativeProfit}</td>
+      </tr>
+      <tr><td colspan="8"></td></tr>
+      <tr style="font-weight: bold;"><td colspan="8">ПАРАМЕТРЫ</td></tr>
+      <tr><td>Цена продажи</td><td colspan="7">${parseInt(avgPrice)} ₽</td></tr>
+      <tr><td>Клиентов в 1 месяц</td><td colspan="7">${firstMonthClients}</td></tr>
+      <tr><td>Стратегия роста</td><td colspan="7">${
+        growthType === 'stable' ? 'Стабильный' :
+        growthType === 'moderate' ? 'Умеренный +10%' :
+        growthType === 'aggressive' ? 'Агрессивный +20%' :
+        growthType === 'very-aggressive' ? 'Очень агрессивный +30%' :
+        `Свой +${customGrowth}%`
+      }</td></tr>
+      <tr><td>Churn Rate</td><td colspan="7">${churnRate}%</td></tr>
+      <tr><td>CAC</td><td colspan="7">${parseInt(cacValue)} ₽</td></tr>
+      <tr><td>Операционные расходы</td><td colspan="7">${parseInt(opex) || 0} ₽</td></tr>
+    </table>
+    </body>
+    </html>
+    `;
+    
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `b24u-calculator-${new Date().toISOString().split('T')[0]}.xls`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   
   if (!showResults) {
@@ -502,12 +650,64 @@ const B24UCalculator = () => {
             <p className="text-slate-400 text-sm">12 месяцев роста</p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={exportToPDF}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition-all"
-            >
-              📄 PDF
-            </button>
+            <div className="relative export-menu">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition-all flex items-center gap-2"
+              >
+                📊 Экспорт
+                <svg className={`w-4 h-4 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50">
+                  <button
+                    onClick={() => {
+                      exportToPDF();
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center gap-3"
+                  >
+                    <span className="text-xl">📄</span>
+                    <div>
+                      <div className="font-semibold text-white">PDF</div>
+                      <div className="text-xs text-slate-400">Печать в PDF</div>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      exportToExcel();
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center gap-3 border-t border-slate-700"
+                  >
+                    <span className="text-xl">📊</span>
+                    <div>
+                      <div className="font-semibold text-white">Excel</div>
+                      <div className="text-xs text-slate-400">Файл .xls</div>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      exportToGoogleSheets();
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors flex items-center gap-3 border-t border-slate-700"
+                  >
+                    <span className="text-xl">📈</span>
+                    <div>
+                      <div className="font-semibold text-white">CSV</div>
+                      <div className="text-xs text-slate-400">Для Google Sheets</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+            
             <button
               onClick={handleReset}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-semibold transition-all"
