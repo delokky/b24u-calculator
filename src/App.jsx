@@ -92,9 +92,11 @@ const B24UCalculator = () => {
     if (step === 2) {
       return growthType !== '' && (growthType === 'custom' ? customGrowth !== '' : true);
     }
-    if (step === 4 || step === 5) {
+    // Allow 0 for churn (step 3), CAC (step 4) and opex (step 5)
+    if (step === 3 || step === 4 || step === 5) {
       return value !== '';
     }
+    // For price (step 0) and clients (step 1) require positive values
     return value !== '' && parseInt(value) > 0;
   };
   
